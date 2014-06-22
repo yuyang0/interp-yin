@@ -1,0 +1,108 @@
+-- primitive function
+(print "你是谁")
+(define 你 "猪头")
+(print 你)
+(print print)
+(print "hello")
+(print (+ 1 2 3))
+(print (- 1 2 3))
+(print (* 1 2 3 2))
+
+(print (/ 12 3 2))
+(print (and true true false))
+(print (= 1 1 2))
+
+(print (= 1 1 1 1))
+
+(print "---------------------------define------------------------")
+(define aa 123)
+(print aa)
+(define bb [1 2 3])
+(print bb)
+(define [v1 v2] [3 4])
+(print v1 " " v2)
+
+(define {:a r1 :b r2} {:a 123 :b 456})
+(print r1 " " r2)
+
+(print "---------------------------assign--------------------------")
+(define ass-rec {:a 1 :b 2 :c 3 :d 4})
+(set! ass-rec.d 44)
+(print ass-rec)
+
+(define [x1 x2 x3 x4] [0 0 0 0])
+(set! {:a x1 :b x2 :c x3 :d x4} ass-rec)
+(print x1 " " x2 " " x3 " " x4)
+(print "-------------------vector-------------------")
+(define vec [1 2 3])
+(print vec#2)
+(set! vec#2 222)
+(print vec)
+-- (print vec#4a)  -- => Not a number
+-- (set! vec#4 222)  -- => out of index
+-- (print vec#4)
+
+(print "------------------record-------------------")
+(define rec {:a 1 :b 2})
+(print rec.b)
+(set! rec.b 33)
+(print rec)
+-- (set! rec.c 44) -- => don't contain the attribute name
+
+(print "------------------- if -------------------")
+(if (= aa 123)
+   (print "if True")
+   (print "if False"))
+
+(print "-------------------function-------------------")
+(define add
+  (fun (x y)
+    (+ x y)))
+
+(print (add 100 200))
+(print (add 1000 :y 2000))
+(print (add :x 10000 :y 20000))
+(print (add :y 100000 :x 200000))
+-- (print (add :y 100000 200000))
+-- (print (add :y 100000 :x :x 200000))
+-- (print (add 100000 :x 200000))
+
+-- recursive function
+(define recur-add
+  (fun (x y)
+    (if (= x 0)
+      y
+      (+ 1 (recur-add (- x 1) y)))))
+(print (recur-add 0 20))
+
+(print (recur-add 10 20))
+
+-- mutual recursion
+(define even
+  (fun (x)
+    (if (= x 0)
+        true
+        (if (= x 1)
+            false
+            (odd (- x 1))))))
+
+(define odd
+  (fun (x)
+    (if (= x 0)
+        false
+        (if (= x 1)
+            true
+            (even (- x 1))))))
+(print (even 10))
+(print (even 11))
+(print (odd 10))
+(print (odd 11))
+
+(define test
+  (fun ()
+    (+ a b)))
+(define a 111)
+(define b 111)
+(print (test))
+(set! a 222)
+(print (test))

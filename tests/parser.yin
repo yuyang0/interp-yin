@@ -1,0 +1,31 @@
+-- Number
+0xAbcd1
+-12345
+017234
+0b11011011
+-- Float
+1.1123
+-- String
+"hello world"
+
+-- Boolean
+true
+false
+
+-- Vector
+(define aa [1 2 3 4])
+-- subscript
+aa#3
+-- aa#bb
+-- Record
+(define bb {:a 1 :b 2 :c 3})
+-- attribute
+bb.b
+-- Define
+(define add
+   (fun (a b)
+     (+ a b)))
+
+-- Call
+(print "hello world")
+(print (+ 1 2))
