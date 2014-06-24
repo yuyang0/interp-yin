@@ -39,6 +39,7 @@ class LexicalError(Exception):
         return output
 
 
-class TypeCheckError(Exception):
-    def __init__(self, msg):
-        self.msg = msg
+# class TypeCheckError(Exception):
+#     def __init__(self, msg):
+#         self.msg = msg
+TypeCheckError = ParserError

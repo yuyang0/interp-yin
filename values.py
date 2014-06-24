@@ -59,10 +59,11 @@ class RecordLiteralValue(Value):
         return RECORD_BEGIN + ss.strip() + RECORD_END
 
 class Closure(Value):
-    def __init__(self, args, body, env):
+    def __init__(self, args, properties, body, tbl):
         self.args = args
+        self.properties = properties
         self.body = body
-        self.env = env
+        self.tbl = tbl
 
     def __str__(self):
         return str(self.args) + 'Env: ' + str(self.env)
@@ -83,6 +84,7 @@ class PrimitiveFun(Value):
     def __str__(self):
         return str(self.op)
 
+
 class Add(PrimitiveFun):
     def __init__(self):
         super(Add, self).__init__('+', 0, sys.maxint)
@@ -98,7 +100,7 @@ class Add(PrimitiveFun):
             for arg in args:
                 if (not isinstance(arg, IntValue)) and\
                    (not isinstance(arg, FloatValue)):
-                    fatal('Add.apply', 'argument for + must be integer or float')
+                    fatal('arguments for + must be integer or float')
                 if isinstance(arg, FloatValue):
                     has_float = True
                 ret += arg.value
@@ -117,7 +119,7 @@ class Sub(PrimitiveFun):
         for i, arg in enumerate(args):
             if (not isinstance(arg, IntValue)) and\
                (not isinstance(arg, FloatValue)):
-                fatal('Sub', 'argument for + must be integer or float')
+                fatal('argument for - must be integer or float')
             if isinstance(arg, FloatValue):
                 has_float = True
             if i == 0:
@@ -343,6 +345,10 @@ class Type(Value):
     def __str__(self):
         return self.name
 
+    @staticmethod
+    def subtype(ty1, ty2):
+        pass
+
 class BoolType(Type):
     def __init__(self):
         super(BoolType, self).__init__('Bool')
@@ -359,3 +365,12 @@ class BasicType(object):
     BOOL = BoolType()
     INT = IntType()
     STR = StrType()
+
+class AnyType(Type):
+    def __init__(self):
+        super(AnyType, self).__init__("Any")
+
+class UnionType(Type):
+    def __init__(self, *types):
+        super(UnionType, self).__init__("U:")
+        self.types = types

@@ -34,7 +34,7 @@ class FloatNode(Node):
         except ValueError:
             raise ParserError(self, "invlid literal for float")
 
-    def interp(self, e):
+    def interp(self, tbl):
         return FloatValue(self.value)
 
     def __str__(self):
@@ -62,7 +62,7 @@ class IntNode(Node):
         except ValueError:
             raise ParserError(self, "Not a number")
 
-    def interp(self, e):
+    def interp(self, tbl):
         return IntValue(self.value)
 
     def typecheck(self, tenv):
@@ -76,7 +76,7 @@ class StrNode(Node):
         super(StrNode, self).__init__(fname, start, end, line, col)
         self.value = lexeme.lstrip(STRING_BEGIN).rstrip(STRING_END)
 
-    def interp(self, e):
+    def interp(self, tbl):
         return StrValue(self.value)
 
     def typecheck(self, tenv):
@@ -93,7 +93,7 @@ class BoolNode(Node):
         else:
             self.value = False
 
-    def interp(self, e):
+    def interp(self, tbl):
         return BoolValue(self.value)
 
     def typecheck(self, tenv):
@@ -111,7 +111,7 @@ class KeywordNode(Node):
         return NameNode(self.id, self.fname, self.start+len(KEYWORD_PREFIX),
                         self.end, self.line, self.col)
 
-    def interp(self, e):
+    def interp(self, tbl):
         raise InterpError(self, "keyword can't be evaluated as value")
 
     def __str__(self):
@@ -129,11 +129,17 @@ class VectorNode(Node):
         super(VectorNode, self).__init__(fname, start, end, line, col)
         self.elements = elements
 
-    def interp(self, e):
-        ret = []
-        for ele in self.elements:
-            ret.append(ele.interp(e))
+    def interp(self, tbl):
+        ret = map(lambda ele: ele.interp(tbl), self.elements)
         return VectorValue(ret)
+
+    def check_dup(self):
+        ret = set()
+        for e in self.elements:
+            if e in ret and IS(e, NameNode):
+                raise ParserError(e, "duplicate variable")
+            else:
+                ret.add(e)
 
     def __str__(self):
         ss = ' '.join(map(str, self.elements))
@@ -150,13 +156,13 @@ class SubscriptNode(Node):
         self.value = val
         self.index = idx
 
-    def interp(self, e):
-        vec = self.value.interp(e)
-        idx = self.index.interp(e)
+    def interp(self, tbl):
+        vec = self.value.interp(tbl)
+        idx = self.index.interp(tbl)
 
-        if not isinstance(vec, VectorValue):
+        if not IS(vec, VectorValue):
             raise InterpError(patt.value, 'Not a vector value')
-        if not isinstance(idx, IntValue):
+        if not IS(idx, IntValue):
             raise InterpError(patt.index, 'index is not a Integer')
         if idx.value >= len(vec.values):
             raise InterpError(patt.index, 'out of index')
@@ -175,11 +181,19 @@ class RecordLiteralNode(Node):
         for k in kv_map:
             self.s_kv_map[k.id] = kv_map[k]
 
-    def interp(self, e):
+    def interp(self, tbl):
         ret = {}
         for k in self.s_kv_map:
-            ret[k] = self.s_kv_map[k].interp(e)
+            ret[k] = self.s_kv_map[k].interp(tbl)
         return RecordLiteralValue(ret)
+
+    def check_dup(self):
+        ret = set()
+        for v in self.kv_map.values():
+            if v in ret and IS(v, NameNode):
+                raise ParserError(v, "duplicate variable")
+            else:
+                ret.add(v)
 
     def __str__(self):
         ss = ' '.join(map(lambda k: str(k)+' '+str(self.kv_map[k]), self.kv_map))
@@ -204,11 +218,11 @@ class AttrNode(Node):
         self.value = val
         self.attr = attr
 
-    def interp(self, e):
-        rec = self.value.interp(e)
-        if not isinstance(rec, RecordLiteralValue):
+    def interp(self, tbl):
+        rec = self.value.interp(tbl)
+        if not IS(rec, RecordLiteralValue):
             raise InterpError(self, "Not a record literal value")
-        if not isinstance(self.attr, NameNode):
+        if not IS(self.attr, NameNode):
             raise InterpError(self.attr, "Not a attribute name")
         attr = self.attr.id
         return rec.kv_map[attr]
@@ -222,10 +236,10 @@ class NameNode(Node):
         super(NameNode, self).__init__(fname, start, end, line, col)
         self.id = lexeme
 
-    def interp(self, e):
-        ret = e.lookup(self.id)
+    def interp(self, tbl):
+        ret = tbl.lookup_value(self.id)
         if not ret:
-            raise InterpError(self, '%s is not binded in env' % self.id)
+            raise InterpError(self, 'unbound varibale: %s' % self.id)
         return ret
 
     def __str__(self):
@@ -245,14 +259,14 @@ class IfNode(Node):
         self.conseq = conseq
         self.alt = alt
 
-    def interp(self, e):
-        test = self.test.interp(e)
-        if not isinstance(test, BoolValue):
-            raise InterpError(self.test, 'Test must be a boolean value')
+    def interp(self, tbl):
+        test = self.test.interp(tbl)
+        if not IS(test, BoolValue):
+            raise InterpError(self.test, 'Test is not a boolean value')
         if test.value:
-            return self.conseq.interp(e)
+            return self.conseq.interp(tbl)
         else:
-            return self.alt.interp(e)
+            return self.alt.interp(tbl)
 
     def __str__(self):
         ss = ' '.join([IF_KW, str(self.test), str(self.conseq), str(self.alt)])
@@ -265,10 +279,10 @@ class DefNode(Node):
         self.pattern = pattern
         self.value = val
 
-    def interp(self, e):
+    def interp(self, tbl):
         patt = self.pattern
-        val = self.value.interp(e)
-        bind(patt, val, e)
+        val = self.value.interp(tbl)
+        bind(patt, val, tbl)
 
     def __str__(self):
         output = PAREN_BEGIN + self.node_type('def ') + DEFINE_KW + ' ' +\
@@ -281,10 +295,10 @@ class AssignNode(Node):
         self.pattern = pattern
         self.value = val
 
-    def interp(self, e):
+    def interp(self, tbl):
         patt = self.pattern
-        val = self.value.interp(e)
-        assign(patt, val, e)
+        val = self.value.interp(tbl)
+        assign(patt, val, tbl)
 
     def __str__(self):
         output = PAREN_BEGIN + self.node_type('ass ') + ASSIGN_KW +\
@@ -293,27 +307,48 @@ class AssignNode(Node):
 
 
 class FunNode(Node):
-    def __init__(self, args, body, fname, start, end, line, col):
+    def __init__(self, args, properties, body, fname, start, end, line, col):
         super(FunNode, self).__init__(fname, start, end, line, col)
         self.args = args
+        self.properties = properties
         self.body = body
 
-    def interp(self, env):
-        return Closure(self.args, self.body, env)
+    def interp(self, tbl):
+        properties = self.properties
+        if properties:
+            self.interp_properties(tbl)
+        return Closure(self.args, properties, self.body, tbl)
 
     def __str__(self):
         args_ss = PAREN_BEGIN + ' '.join(map(str, self.args)) + PAREN_END
         output = PAREN_BEGIN + self.node_type('fun ') + FUN_KW + ' ' +\
-                 args_ss + ' ' + str(self.body) + PAREN_END
+                 args_ss + ' ' + str(self.body) + PAREN_END +\
+                 "<<" + str(self.properties) + ">>"
         return output
+
+    def interp_properties(self, env):
+        properties = self.properties
+        tbl = SymTable()
+        for name in properties.table:
+            entry = properties.table[name]
+            pros = {}
+            for k, v in entry.items():
+                if IS(v, Node):
+                    pros[k] = v.interp(env)
+                else:
+                    pros[k] = v
+            tbl.table[name] = pros
+        return tbl
+
 
 
 class ArgumentNode(Node):
     """
     Arguments for CallNode, support keyword argument and positional argument
     """
-    def __init__(self, nodes, fname, start, end, line, col):
-        self.nodes = nodes
+    def __init__(self, pos_nodes, kw_nodes, fname, start, end, line, col):
+        self.positional = pos_nodes
+        self.keywords = kw_nodes
 
         self.fname = fname
         self.start = start
@@ -321,44 +356,15 @@ class ArgumentNode(Node):
         self.line = line
         self.col = col
 
-        self.positional = []
-        self.keywords = {}
-
-        # get separate index of positional arguments and keyword arguments
-        sep_idx = len(nodes)
-        for i in range(len(nodes)):
-            if isinstance(nodes[i], KeywordNode):
-                sep_idx = i
-                break
-
-        positional_nodes = nodes[0:sep_idx]
-        keywords_nodes = nodes[sep_idx:]
-        self.positional.extend(positional_nodes)
-
-        keys = keywords_nodes[0::2]
-        vals = keywords_nodes[1::2]
-        for k in keys:
-            if not isinstance(k, KeywordNode):
-                raise ParserError(k, "must be a keyword node")
-        for v in vals:
-            if isinstance(v, KeywordNode):
-                raise ParserError(v, "can't be a keyword node")
-
-        if len(keys) != len(vals):
-            raise ParserError(self, "the keys and values of keyword arguments must be same length")
-
-        for k, v in zip(keys, vals):
-            self.keywords[k] = v     # the key is KeywordNode instance
-
-    def interp(self, env):
-        positional = map(lambda arg: arg.interp(env), self.positional)
+    def interp(self, tbl):
+        positional = map(lambda arg: arg.interp(tbl), self.positional)
         keywords = {}
         for k in self.keywords:
-            keywords[k.as_name()] = self.keywords[k].interp(env)
+            keywords[k.as_name()] = self.keywords[k].interp(tbl)
         return positional, keywords
 
     def __str__(self):
-        ss = ' '.join(map(str, self.nodes))
+        ss = ' '.join(map(str, self.positional)) + ' ' + str(self.keywords)
         return PAREN_BEGIN + self.node_type('arg ') + ss + PAREN_END
 
 
@@ -368,11 +374,11 @@ class CallNode(Node):
         self.fun = fun
         self.args = args        # ArgumentNode
 
-    def interp(self, env):
-        fv = self.fun.interp(env)
-        positional_args, keyword_args = self.args.interp(env)
+    def interp(self, tbl):
+        fv = self.fun.interp(tbl)
+        positional_args, keyword_args = self.args.interp(tbl)
 
-        if isinstance(fv, Closure):
+        if IS(fv, Closure):
             formal_args = fv.args
             body = fv.body
             if len(positional_args) + len(keyword_args) != len(formal_args):
@@ -387,23 +393,22 @@ class CallNode(Node):
                     raise InterpError(self.args, "param name(%s) is not a keyword"% param)
                 kw[param] = keyword_args[param]
 
-            new_env = Env(fv.env)
+            new_tbl = SymTable(fv.tbl)
             for k, v in kw.items():
-                bind(k, v, new_env)
+                bind(k, v, new_tbl)
 
             callstack.append(self)
-            ret = body.interp(new_env)
+            ret = body.interp(new_tbl)
             callstack.pop()
             return ret
-        elif isinstance(fv, PrimitiveFun):
+        elif IS(fv, PrimitiveFun):
             if not fv.check_arity(len(positional_args)):
                 if fv.min_arity == fv.max_arity:
                     expected = str(fv.min_arity)
                 else:
                     expected = "at least %s" % fv.min_arity
-                msg = """the expected number of arguments doesn't match the given number
-                expected: %s
-                given %s""" % (expected, len(positional_args))
+                msg = """the expected %s arguments, but given %s
+                """ % (expected, len(positional_args))
                 raise InterpError(self,  msg)
             return fv.apply(positional_args)
         else:
@@ -414,17 +419,18 @@ class CallNode(Node):
                  str(self.args) + PAREN_END
         return output
 
+
 class BlockNode(Node):
     def __init__(self, statements, fname, start, end, line, col):
         super(BlockNode, self).__init__(fname, start, end, line, col)
         self.statements = statements
 
-    def interp(self, e):
-        e = Env(e)              # create new environment
+    def interp(self, tbl):
+        tbl = SymTable(tbl)              # create new symbol table
         for s in self.statements[:-1]:
-            s.interp(e)
+            s.interp(tbl)
         last = self.statements[len(self.statements)-1]
-        return last.interp(e)
+        return last.interp(tbl)
 
     def __str__(self):
         stats_str = '\n'.join(map(str, self.statements))
@@ -432,20 +438,19 @@ class BlockNode(Node):
         return output
 
 
-def bind(patt, val, env):
-    if isinstance(patt, NameNode):
-        if env.lookup_local(patt.id):
+def bind(patt, val, tbl):
+    if IS(patt, NameNode):
+        if tbl.lookup_value_local(patt.id):
             raise InterpError(patt, "Trying to redefine the name " + str(patt))
-        env.put(patt.id, val)
-    elif isinstance(patt, VectorNode) and isinstance(val, VectorValue):
+        tbl.put_value(patt.id, val)
+    elif IS(patt, VectorNode) and IS(val, VectorValue):
         elements = patt.elements
         values = val.values
         if len(elements) != len(values):
             raise InterpError(patt, "the two vectors must have same length")
         for a, b in zip(patt.elements, val.values):
-            bind(a, b, env)
-    elif isinstance(patt, RecordLiteralNode) and\
-         isinstance(val, RecordLiteralValue):
+            bind(a, b, tbl)
+    elif IS(patt, RecordLiteralNode) and IS(val, RecordLiteralValue):
         p_map = patt.s_kv_map
         v_map = val.kv_map
         if len(p_map) != len(v_map):
@@ -455,23 +460,22 @@ def bind(patt, val, env):
         for p_key in p_map:
             p_val = p_map[p_key]
             v_val = v_map[p_key]
-            bind(p_val, v_val, env)
+            bind(p_val, v_val, tbl)
     else:
         raise InterpError(patt, "unkown pattern")
 
 
-def assign(patt, val, env):
-    if isinstance(patt, NameNode):
-        env.set(patt.id, val)
-    elif isinstance(patt, VectorNode) and isinstance(val, VectorValue):
+def assign(patt, val, tbl):
+    if IS(patt, NameNode):
+        tbl.set_value(patt.id, val)
+    elif IS(patt, VectorNode) and IS(val, VectorValue):
         elements = patt.elements
         values = val.values
         if len(elements) != len(values):
             raise InterpError(patt, "the two vectors must have same length")
         for a, b in zip(patt.elements, val.values):
-            assign(a, b, env)
-    elif isinstance(patt, RecordLiteralNode) and\
-         isinstance(val, RecordLiteralValue):
+            assign(a, b, tbl)
+    elif IS(patt, RecordLiteralNode) and IS(val, RecordLiteralValue):
         p_map = patt.s_kv_map
         v_map = val.kv_map
         if len(p_map) != len(v_map):
@@ -481,23 +485,23 @@ def assign(patt, val, env):
         for p_key in p_map:
             p_val = p_map[p_key]
             v_val = v_map[p_key]
-            assign(p_val, v_val, env)
-    elif isinstance(patt, SubscriptNode):
-        vec = patt.value.interp(env)
-        idx = patt.index.interp(env)
-        if not isinstance(vec, VectorValue):
+            assign(p_val, v_val, tbl)
+    elif IS(patt, SubscriptNode):
+        vec = patt.value.interp(tbl)
+        idx = patt.index.interp(tbl)
+        if not IS(vec, VectorValue):
             raise InterpError(patt.value, 'Not a vector value')
-        if not isinstance(idx, IntValue):
+        if not IS(idx, IntValue):
             raise InterpError(patt.index, 'index is not a Integer')
         if idx.value >= len(vec.values):
             raise InterpError(patt.index, 'out of index')
         vec.values[idx.value] = val
 
-    elif isinstance(patt, AttrNode):
-        rec = patt.value.interp(env)
-        if not isinstance(rec, RecordLiteralValue):
+    elif IS(patt, AttrNode):
+        rec = patt.value.interp(tbl)
+        if not IS(rec, RecordLiteralValue):
             raise InterpError(patt.value, 'Not a record literal value')
-        if not isinstance(patt.attr, NameNode):
+        if not IS(patt.attr, NameNode):
             raise InterpError(patt.attr, 'Not a attribute name')
         attr = patt.attr.id
         if attr not in rec.kv_map:

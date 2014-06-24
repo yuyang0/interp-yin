@@ -3,6 +3,7 @@
 (define 你 "猪头")
 (print 你)
 (print print)
+(print 1)
 (print "hello")
 (print (+ 1 2 3))
 (print (- 1 2 3))

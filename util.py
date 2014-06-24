@@ -31,8 +31,5 @@ def debug(*msg):
 # test
 # print read_file("~/tmp/aa.py")
 
-def even(n):
-    pass
+IS = isinstance
 
-def odd(n):
-    pass

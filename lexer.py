@@ -66,12 +66,21 @@ class NameToken(Token):
 
 
 class Lexer(object):
-    def __init__(self, fname):
-        self.text = read_file(fname)
+    def __init__(self, fname, text=None):
+        if text:
+            self.text = text
+        else:
+            self.text = read_file(fname)
+        # append a space to the end of the source code string to avoid
+        # some trick problems
+        self.text += " "
+
         self.fname = fname
         self.offset = 0
         self.line = 1
         self.col = 0
+
+        self.peek = self.text[0]
 
     def text_startswith(self, prefix):
         return self.text.startswith(prefix, self.offset)
@@ -195,11 +204,18 @@ class Lexer(object):
         if is_name_char(first_char):
             return self.scan_name()
         else:
-            raise LexicalError(self.fname, self.line, self.col, "unkown token")
+            raise LexicalError(self.fname, self.line, self.col,
+                               "unkown token: %s" % first_char)
+
 
 if __name__ == '__main__':
     import sys
-    lex = Lexer(sys.argv[1])
+    import readline
+    if len(sys.argv) == 1:
+        ss = raw_input("==> ")
+        lex = Lexer("stdin", ss)
+    else:
+        lex = Lexer(sys.argv[1])
     tok = lex.next_token()
     while tok:
         print tok

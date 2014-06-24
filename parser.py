@@ -13,8 +13,8 @@ from error import ParserError, LexicalError
 
 
 class Parser(object):
-    def __init__(self, fname):
-        self.lex = Lexer(fname)
+    def __init__(self, fname, text=None):
+        self.lex = Lexer(fname, text)
 
     def parse_pair(self, p):
         open_delim = p.open_delim
@@ -25,7 +25,7 @@ class Parser(object):
         line = open_delim.line
         col = open_delim.col
 
-        if open_delim.lexeme == PAREN_BEGIN:
+        if IS(p, ParenPair):
             if len(p.elements) == 0:
                 raise ParserError(open_delim, 'Pair should not be empty.')
 
@@ -33,6 +33,11 @@ class Parser(object):
 
             if isinstance(kw_tok, NameToken):
                 kw = p.elements[0].lexeme
+                # the template for error message
+                msg_tpl = """
+                 %s: bad syntax;
+                expect %s parts after keyword, but given %s parts
+                """
                 if kw == SEQ_KW:
                     statements = []
                     for i in p.elements[1:]:
@@ -41,36 +46,48 @@ class Parser(object):
 
                 elif kw == ASSIGN_KW:
                     if len(p.elements) != 3:
-                        raise ParserError(open_delim, 'Assgin must have 3 elements')
-                    pattern = self.parse_tok_or_pair(p.elements[1])
-                    check_dup(pattern)
+                        err_msg = msg_tpl % (ASSIGN_KW, 2, len(p.elements)-1)
+                        raise ParserError(open_delim, err_msg)
+                    patt = self.parse_tok_or_pair(p.elements[1])
+                    if IS(patt, VectorNode) or IS(patt, RecordLiteralNode):
+                        patt.check_dup()
                     val = self.parse_tok_or_pair(p.elements[2])
-                    return AssignNode(pattern, val, fname, start, end, line, col)
+                    return AssignNode(patt, val, fname, start, end, line, col)
                 elif kw == DEFINE_KW:
                     if len(p.elements) != 3:
-                        raise ParserError(open_delim, 'Define must have 3 elements')
-                    pattern = self.parse_tok_or_pair(p.elements[1])
-                    check_dup(pattern)
+                        err_msg = msg_tpl % (DEFINE_KW, 2, len(p.elements)-1)
+                        raise ParserError(open_delim, err_msg)
+                    patt = self.parse_tok_or_pair(p.elements[1])
+                    if IS(patt, VectorNode) or IS(patt, RecordLiteralNode):
+                        patt.check_dup()
                     val = self.parse_tok_or_pair(p.elements[2])
-                    return DefNode(pattern, val, fname, start, end, line, col)
+                    return DefNode(patt, val, fname, start, end, line, col)
                 elif kw == IF_KW:
                     if len(p.elements) != 4:
-                        raise ParserError(open_delim, 'IF must have 4 elements')
+                        if len(p.elements) == 3:
+                            msg = "if: missing an \"else\" expression"
+                        else:
+                            msg = """if: bad syntax;
+                            has %d part after keyword""" % len(p.elements)-1
+                        raise ParserError(open_delim, msg)
                     test = self.parse_tok_or_pair(p.elements[1])
                     conseq = self.parse_tok_or_pair(p.elements[2])
                     alt = self.parse_tok_or_pair(p.elements[3])
                     return IfNode(test, conseq, alt, fname, start,
-                              end, line, col)
-                elif kw == FUN_KW:
+                                  end, line, col)
+                elif kw == FUN_KW:    # anonymous function
                     if len(p.elements) < 2:
-                        raise ParserError(open_delim, 'Fun must have 2 elements at least')
-                    args_pair = p.elements[1]
-                    if not isinstance(args_pair, Pair):
+                        err_msg = msg_tpl % (FUN_KW, "at least 1", len(p.elements)-1)
+                        raise ParserError(open_delim, err_msg)
+                    params_pair = p.elements[1]
+                    if not isinstance(params_pair, Pair):
                         raise ParserError(open_delim, 'Formal Parameters should be a list')
-                    args = self.parse_lst(args_pair.elements)
+                    param_names, properties = self.parse_properties(params_pair.elements)
+                    # construct body
                     statements = self.parse_lst(p.elements[2:])
                     body = BlockNode(statements, fname, start, end, line, col)
-                    return FunNode(args, body, fname, start, end, line, col)
+                    return FunNode(param_names, properties, body,
+                                   fname, start, end, line, col)
             # application(Call)
             fun = self.parse_tok_or_pair(p.elements[0])
             parsed_args = self.parse_lst(p.elements[1:])
@@ -78,26 +95,18 @@ class Parser(object):
                 loc = close_delim
             else:
                 loc = p.elements[1]
-            args = ArgumentNode(parsed_args, loc.fname, loc.start,
+            positional, keywords = Parser.parse_arguments(parsed_args)
+            args = ArgumentNode(positional, keywords, loc.fname, loc.start,
                                 end, loc.line, loc.col)
             return CallNode(fun, args, fname, start, end, line, col)
         # vector literal
-        elif open_delim.lexeme == VECTOR_BEGIN:
+        elif IS(p, SquarePair):
             eles = self.parse_lst(p.elements)
             return VectorNode(eles, fname, start, end, line, col)
         # record literal
-        elif open_delim.lexeme == RECORD_BEGIN:
+        elif IS(p, CurlyPair):
             elements = self.parse_lst(p.elements)
-            even_eles = elements[0::2]
-            odd_eles = elements[1::2]
-            if len(even_eles) != len(odd_eles):
-                raise ParserError(open_delim, 'record literal must have even number of elements')
-            keys = []
-            for k in even_eles:
-                if not isinstance(k, KeywordNode):
-                    raise ParserError(k, 'Not a keyword')
-                keys.append(k)
-            kv_map = dict(zip(keys, odd_eles))
+            kv_map = dict(Parser.parse_map(elements))
             return RecordLiteralNode(kv_map, fname, start, end, line, col)
         else:
             raise ParserError(open_delim, 'unkown pair')
@@ -162,6 +171,63 @@ class Parser(object):
         return BlockNode(statements, first.fname, first.start, last.end,
                          first.line, first.col)
 
+    def parse_properties(self, lst):
+        params = []
+        properties = None
+        for entry in lst:
+            if isinstance(entry, NameToken):
+                params.append(self.parse_tok(entry))
+            if isinstance(entry, Pair):
+                eles = entry.elements
+                if len(eles) < 2:
+                    raise ParserError(entry, "at least 2 elements")
+                if not properties:
+                    properties = SymTable()
+                nodes = self.parse_lst(eles)
+                name = nodes[0]
+                ty = nodes[1]
+                params.append(name)
+                properties.put_type(name.id, ty)
+
+                for k, v in Parser.parse_map(nodes[2:]):
+                    properties.put(name.id, k.id, v)
+
+        return params, properties
+
+    @staticmethod
+    def parse_map(nodes):
+        keys = nodes[0::2]
+        vals = nodes[1::2]
+        for k in keys:
+            if not isinstance(k, KeywordNode):
+                raise ParserError(k, "must be a keyword node")
+        for v in vals:
+            if isinstance(v, KeywordNode):
+                raise ParserError(v, "can't be a keyword node")
+        if len(keys) != len(vals):
+            raise ParserError(self, "the keys and values don't have same length")
+        return zip(keys, vals)
+
+    @staticmethod
+    def parse_arguments(nodes):
+        positional = []
+        keywords = {}
+
+        # get separate index of positional arguments and keyword arguments
+        sep_idx = len(nodes)
+        for i in range(len(nodes)):
+            if isinstance(nodes[i], KeywordNode):
+                sep_idx = i
+                break
+
+        positional_nodes = nodes[0:sep_idx]
+        keywords_nodes = nodes[sep_idx:]
+        positional.extend(positional_nodes)
+
+        for k, v in Parser.parse_map(keywords_nodes):
+            keywords[k] = v     # the key is KeywordNode instance
+        return positional, keywords
+
     def next_pair_or_tok(self, deepth):
         try:
             tok = self.lex.next_token()
@@ -183,11 +249,19 @@ class Parser(object):
                     break
                 elements.append(pt)
             close_delim = pt
-            return Pair(open_delim, close_delim, elements)
+            if open_delim.lexeme == PAREN_BEGIN:
+                return ParenPair(open_delim, close_delim, elements)
+            elif open_delim.lexeme == SQUARE_BEGIN:
+                return SquarePair(open_delim, close_delim, elements)
+            elif open_delim.lexeme == CURLY_BEGIN:
+                return CurlyPair(open_delim, close_delim, elements)
+            else:
+                raise ParserError(open_delim, "unkown pair")
         elif is_close(tok.lexeme) and deepth == 0:
             raise ParserError(tok, "unbalanced delimeter")
         else:
             return tok
+
 
 class Pair(object):
     '''
@@ -210,30 +284,29 @@ class Pair(object):
         return output
 
 
-def check_dup(patt):
-    if isinstance(patt, RecordLiteralNode):
-        ret = set()
-        for k in patt.kv_map:
-            v = patt.kv_map[k]
-            if v in ret and isinstance(v, NameNode):
-                raise ParserError(v, "duplicate variable")
-            else:
-                ret.add(v)
+class ParenPair(Pair):
+    def __init__(self, first, last, elements):
+        super(ParenPair, self).__init__(first, last, elements)
 
-    elif isinstance(patt, VectorNode):
-        ret = set()
-        for e in patt.elements:
-            if e in ret and isinstance(e, NameNode):
-                raise ParserError(e, "duplicate variable")
-            else:
-                ret.add(e)
-    else:
-        return True
+
+class SquarePair(Pair):
+    def __init__(self, first, last, elements):
+        super(SquarePair, self).__init__(first, last, elements)
+
+
+class CurlyPair(Pair):
+    def __init__(self, first, last, elements):
+        super(CurlyPair, self).__init__(first, last, elements)
 
 
 if __name__ == '__main__':
     import sys
-    p = Parser(sys.argv[1])
+    import readline
+    if len(sys.argv) == 1:
+        ss = raw_input("==> ")
+        p = Parser("stdin", ss)
+    else:
+        p = Parser(sys.argv[1])
     try:
         node = p.parse()
     except ParserError, e:
