@@ -283,6 +283,45 @@ class Pair(object):
                  str(self.close_delim)
         return output
 
+    # @staticmethod
+    # def next_pair_or_tok(lex):
+    #     return Pair.next_pair_or_tok_1(lex, 0)
+
+    # @staticmethod
+    # def next_pair_or_tok_1(lex, deepth):
+    #     try:
+    #         tok = lex.next_token()
+    #     except LexicalError, e:
+    #         fatal(str(e))
+
+    #     if not tok:
+    #         return False
+
+    #     if is_open(tok.lexeme):
+    #         open_delim = tok
+    #         elements = []
+    #         while True:
+    #             pt = Pair.next_pair_or_tok_1(deepth+1)
+    #             if not pt:
+    #                 raise ParserError(tok, "unbalanced delimeter")
+    #             if isinstance(pt, DelimeterToken) and\
+    #                match_delimeter(open_delim.lexeme, pt.lexeme):
+    #                 break
+    #             elements.append(pt)
+    #         close_delim = pt
+    #         if open_delim.lexeme == PAREN_BEGIN:
+    #             return ParenPair(open_delim, close_delim, elements)
+    #         elif open_delim.lexeme == SQUARE_BEGIN:
+    #             return SquarePair(open_delim, close_delim, elements)
+    #         elif open_delim.lexeme == CURLY_BEGIN:
+    #             return CurlyPair(open_delim, close_delim, elements)
+    #         else:
+    #             raise ParserError(open_delim, "unkown pair")
+    #     elif is_close(tok.lexeme) and deepth == 0:
+    #         raise ParserError(tok, "unbalanced delimeter")
+    #     else:
+    #         return tok
+
 
 class ParenPair(Pair):
     def __init__(self, first, last, elements):

@@ -80,21 +80,23 @@ class Lexer(object):
         self.line = 1
         self.col = 0
 
-        self.peek = self.text[0]
+        self.peek = self.text[0]  # first character
 
     def text_startswith(self, prefix):
         return self.text.startswith(prefix, self.offset)
 
     def forward(self, n=1):
         for i in range(n):
-            char = self.text[self.offset]
-            if char == '\n':
+            if self.peek == '\n':
                 self.line += 1
                 self.col = 0
                 self.offset += 1
             else:
                 self.col += 1
                 self.offset += 1
+
+            if self.not_at_end():
+                self.peek = self.text[self.offset]
 
     def at_end(self):
         return self.offset >= len(self.text)
@@ -106,14 +108,10 @@ class Lexer(object):
         if self.at_end():
             return False
 
-        char = self.text[self.offset]
-        if char.isspace():
-            while self.not_at_end() and char.isspace():
+        if self.peek.isspace():
+            while self.not_at_end() and self.peek.isspace():
                 self.forward()
-                if self.not_at_end():
-                    char = self.text[self.offset]
-                else:
-                    break
+
             return True
         else:
             return False
@@ -161,16 +159,11 @@ class Lexer(object):
         if self.at_end():
             return False
 
-        char = self.text[self.offset]
         start = self.offset
         start_line = self.line
         start_col = self.col
-        while is_name_char(char):
+        while self.not_at_end and is_name_char(self.peek):
             self.forward()
-            if self.not_at_end():
-                char = self.text[self.offset]
-            else:
-                break
         end = self.offset
         lexeme = self.text[start:end]
         tok = NameToken(lexeme, self.fname, start, end,
@@ -182,9 +175,8 @@ class Lexer(object):
         if self.at_end():
             return False
 
-        first_char = self.text[self.offset]
-        if is_delimeter(first_char):
-            tok = DelimeterToken(first_char, self.fname, self.offset,
+        if is_delimeter(self.peek):
+            tok = DelimeterToken(self.peek, self.fname, self.offset,
                                  self.offset+1, self.line, self.col)
             self.forward()
             return tok
@@ -201,11 +193,11 @@ class Lexer(object):
             return tok
 
         # Name
-        if is_name_char(first_char):
+        if is_name_char(self.peek):
             return self.scan_name()
         else:
             raise LexicalError(self.fname, self.line, self.col,
-                               "unkown token: %s" % first_char)
+                               "unkown token: %s" % self.peek)
 
 
 if __name__ == '__main__':
